@@ -127,6 +127,22 @@ def group_by_single_day(day_index=0, num_of_hours=1, base_dataset=None, plot=Fal
     return delta_estimate_day
 
 
+def group_by_single_day_street(num_of_hours=1, pre_loaded_occupancies=False, plot=False):
+    all_delta_estimates = []
+    delta_estimates = [group_by_single_day(day_of_week, num_of_hours, pre_loaded_occupancies) for day_of_week in range(5)]
+    all_delta_estimates.extend(delta_estimates)
+    if plot:
+        plt.plot(delta_estimates, 'o')
+#     else:
+#         print("\delta estimates for {0}: {1}".format(name, delta_estimates))
+    if plot:
+        plt.legend(loc='upper left', bbox_to_anchor=(1, 1), ncol=1)
+        plt.xlabel("Day of Week")
+        plt.ylabel("$\delta$ estimate")
+        plt.xticks([0, 1, 2, 3, 4], ["Mon", "Tue", "Wed", "Thu", "Fri"])
+    return np.mean(all_delta_estimates)
+
+
 def dataset_creator_weekdays_window(street_name, timewin=(1400,1400), pre_loaded_dataset=None, daytype="weekday",NANGAPFILL=False):
     if pre_loaded_dataset is None:
         dataset = pd.read_csv('SFpark_ParkingSensorData_HourlyOccupancy_20112013.csv')
@@ -184,6 +200,7 @@ def average_occupancy_at_end(occ, num_of_days, num_of_hours_in_window, numdays=5
     return np.mean(occ["OCCUPANCY_FRAC"].tail(num_of_days * num_of_hours_in_window))
 
 def sf_park_price_trajectory(df, num_of_hours_in_window):
+    numdays = 5
     rates = list(df["RATE"])[::num_of_hours_in_window * numdays]    # 5 weekdays
     price_trajectory = [(rates[0], 0)]
     for i in range(1, len(rates)-1):
