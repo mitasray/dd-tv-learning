@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-
+# This function handles the nan values in the RATE column of the data
 def rate_nan_fixer(df, printer=False, NANGAPFILL=False):
     if NANGAPFILL:
         num_of_rows = len(df.index)
@@ -50,6 +50,81 @@ def new_rate_indices_finder(df, return_rates=False):
 def find_block_nums(df, street_name):
     block_nums = df.STREET_BLOCK.unique()
     return [int(name[len(street_name):]) for name in block_nums]
+
+
+# This procedure is used to estimate the value of the geometric decay rate, i.e., \delta
+def grad_descent(theta, epsilon, loss_func, grad_func):
+    gap = epsilon + 1
+    loss = loss_func(theta)
+    eta = 1    # can change this initialization to something better
+    while gap > epsilon:
+        theta_new = min(1, max(0, theta - eta * grad_func(theta)))
+        loss_new = loss_func(theta_new)
+        if loss_new > loss:
+            eta *= 0.1
+        else:
+            gap = loss - loss_new
+            theta = theta_new    # projection into [0, 1]
+            loss = loss_new
+    return theta
+
+
+def loss_func_delta(prev_fixed_distribution, next_fixed_distribution, occupancy_measures):
+    def loss_func(delta):
+        n = len(occupancy_measures)
+        delta_lst = delta ** np.arange(1, n+1)
+        vec = next_fixed_distribution + delta_lst * (prev_fixed_distribution - next_fixed_distribution) - occupancy_measures
+        return np.inner(vec, vec)
+    return loss_func
+
+
+def grad_func_delta(prev_fixed_distribution, next_fixed_distribution, occupancy_measures):
+    def grad_func(delta):
+        n = len(occupancy_measures)
+        delta_lst = delta ** np.arange(1, n+1)
+        delta_lst_i_times_iminus1 = np.arange(1, n+1) * (delta ** np.arange(n))
+        distribution_gap = prev_fixed_distribution - next_fixed_distribution
+        vec = (distribution_gap * delta_lst + next_fixed_distribution - occupancy_measures) * distribution_gap * delta_lst_i_times_iminus1
+        return np.sum(vec)
+    return grad_func
+
+
+def group_by_single_day(day_index=0, num_of_hours=1, base_dataset=None, plot=False):
+    assert 0 <= day_index <= 6
+    occupancy_day = base_dataset[pd.to_datetime(base_dataset["START_TIME_DT"]).dt.dayofweek == day_index]
+    occupancy_day = occupancy_day.set_index([pd.Index(list(range(len(occupancy_day.index))))])
+    
+    new_rate_indices_day, new_rate_day = new_rate_indices_finder(occupancy_day, return_rates=True)
+    new_rate_indices_nozero_day = new_rate_indices_day[1:]
+    
+    occupancy_frac_day = list(occupancy_day["OCCUPANCY_FRAC"])
+    OCCUPANCY_FRAC_INDEX = list(occupancy_day.columns).index("OCCUPANCY_FRAC")
+    
+    fixed_point_distributions_day = [np.mean([occupancy_day.iat[index-i, OCCUPANCY_FRAC_INDEX] for i in range(1, num_of_hours+1)]) for index in new_rate_indices_nozero_day]
+
+    batches_day = dict()
+    for i in range(len(fixed_point_distributions_day) - 1):
+        batches_day[i] = {"prev_fixed_distribution": fixed_point_distributions_day[i],
+                          "next_fixed_distribution": fixed_point_distributions_day[i + 1], 
+                          "occupancy_measures": occupancy_frac_day[new_rate_indices_nozero_day[i]:new_rate_indices_nozero_day[i + 1]]}
+    
+    loss_func_delta_day_lst = [loss_func_delta(batches_day[i]["prev_fixed_distribution"], batches_day[i]["next_fixed_distribution"], batches_day[i]["occupancy_measures"]) for i in range(len(fixed_point_distributions_day) - 1)]
+    grad_func_delta_day_lst = [grad_func_delta(batches_day[i]["prev_fixed_distribution"], batches_day[i]["next_fixed_distribution"], batches_day[i]["occupancy_measures"]) for i in range(len(fixed_point_distributions_day) - 1)]
+    loss_func_delta_day_cumulative = lambda x: sum([loss_func(x) for loss_func in loss_func_delta_day_lst])
+    grad_func_delta_day_cumulative = lambda x: np.sum([grad_func(x) for grad_func in grad_func_delta_day_lst])
+    
+    delta_estimate_day = grad_descent(1, 1e-6, loss_func_delta_day_cumulative, grad_func_delta_day_cumulative)
+    
+    if plot:
+        print("Plotting for day {0} with \delta={1}".format(day_index, delta_estimate_day))
+        for occupancy_measure_index in range(len(fixed_point_distributions_day) - 1):
+            occupancy_measures = batches_day[occupancy_measure_index]["occupancy_measures"]
+            next_distribution = fixed_point_distributions_day[occupancy_measure_index + 1]
+            plt.plot(occupancy_measures, 'o')
+            plt.plot([next_distribution + (delta_estimate_day ** i) * (fixed_point_distributions[occupancy_measure_index] - next_distribution) for i in range(len(occupancy_measures))])
+            plt.show()
+    
+    return delta_estimate_day
 
 
 def dataset_creator_weekdays_window(street_name, timewin=(1400,1400), pre_loaded_dataset=None, daytype="weekday",NANGAPFILL=False):
