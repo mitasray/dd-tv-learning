@@ -267,8 +267,27 @@ def estimate_m_from_final_occupancy(q, theta, final_occ, N=1e4):
     d = np.asarray(pd.DataFrame.copy(q, deep=True)['OCCUPANCY_FRAC'])
     return (final_occ - np.mean(np.random.choice(d, int(N), replace=True))) / theta
 
-def run_dynamics(d0,q, theta, n=int(1e4), delta=0.8 ):
+def run_dynamics(d0,q, m, theta, n=int(1e4), delta=0.8):
     return delta**n*d0+(1-delta**n)*(q+m*theta)
+
+def find_mu(l_star, eta, alpha):
+    return (l_star**2 * eta / alpha) ** (1/4)
+
+def sample_sphere(epsilon,d):
+    """Returns a point on the sphere in R^d of radius epsilon."""
+    x = np.random.normal(size=d)
+    x /= np.linalg.norm(x)
+    x *= epsilon
+    return x
+
+def loss_func_theta_qt(m, gamma,d0, delta=0.8,n=1e4, N=1e4, q_occ=None):
+    def loss_func_qt(theta):
+        samples = (1-delta**n)*(np.random.choice(q_occ,int(N), replace=True)+m*theta)+delta**n*np.random.choice(d0,int(N), replace=True)
+        samples = np.minimum(np.maximum(samples, np.zeros(np.size(samples))), np.ones(np.size(samples)))    # bound all entries between 0 and 1
+        loss_p = (samples - 0.7)**2
+        return 0.5*(gamma * theta**2 + 1/N * np.sum(loss_p))
+    
+    return loss_func_qt
 
 class ddproblem:
     def __init__(self, delta, n, N, theta_init=0,Rmin=0,Rmax=8, gamma=1e-3, seeds=[1]):
