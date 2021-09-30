@@ -270,8 +270,11 @@ def estimate_m_from_final_occupancy(q, theta, final_occ, N=1e4):
 def run_dynamics(d0,q, m, theta, n=int(1e4), delta=0.8):
     return delta**n*d0+(1-delta**n)*(q+m*theta)
 
-def find_mu(l_star, eta, alpha):
-    return (l_star**2 * eta / alpha) ** (1/4)
+def find_mu(l_star, eta, smoothness, R, q=1):
+    return (q**2 * l_star**2 * eta / (2 * smoothness * R)) ** (1/3)
+
+# def find_mu(l_star, eta, alpha):
+#     return (l_star**2 * eta / alpha) ** (1/4)
 
 def sample_sphere(epsilon,d):
     """Returns a point on the sphere in R^d of radius epsilon."""
